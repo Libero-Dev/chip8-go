@@ -489,7 +489,16 @@ func (c *Chip8) drawSprite(opcode uint16) {
 
 	for j = 0; j < h; j++ {
 		pixel := c.MainMemory[uint16(c.I)+j]
+
+		if uint8(y)+uint8(j) >= SCREEN_HEIGHT {
+			continue
+		}
+
 		for i = 0; i < 8; i++ {
+			if uint8(x)+uint8(i) >= SCREEN_WIDTH {
+				continue
+			}
+
 			if (pixel & (0x80 >> i)) != 0 {
 				if c.screenState[(uint8(y) + uint8(j))][uint8(x)+uint8(i)] == 1 {
 					c.Vx[0xF] = 1
