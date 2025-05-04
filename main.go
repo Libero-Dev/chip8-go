@@ -1,9 +1,9 @@
 package main
 
 import (
-	"crypto/rand"
 	"image"
 	"image/color"
+	"math/rand"
 	"os"
 	"time"
 
@@ -51,7 +51,9 @@ type Chip8 struct {
 
 	isStopped bool
 
-	keyPressed uint8
+	keyPressed [16]bool
+
+	keyJustReleased [16]bool
 
 	screen *opengl.Window
 
@@ -81,7 +83,7 @@ func run() {
 	c := NewChip8()
 	c.screen = win
 	c.LoadDefaultSprites()
-	c.LoadRomFile("./flightrunner.ch8")
+	c.LoadRomFile("./pong.rom")
 	c.screen.Clear(colorOff)
 	win.SetMatrix(pixel.IM.Scaled(pixel.ZV, 1))
 
@@ -130,7 +132,8 @@ func (c *Chip8) ExecuteCPU(cyclesToExecute int) {
 }
 
 func (c *Chip8) handleInput() {
-	c.keyPressed = 0xFF // No key
+	c.keyPressed = [16]bool{}
+	c.keyJustReleased = [16]bool{}
 
 	keyMap := map[pixel.Button]byte{
 		pixel.Key1: 0x1, pixel.Key2: 0x2, pixel.Key3: 0x3, pixel.Key4: 0xC,
@@ -150,8 +153,11 @@ func (c *Chip8) handleInput() {
 
 	for key, chip8Key := range keyMap {
 		if c.screen.Pressed(key) {
-			c.keyPressed = chip8Key
-			return
+			c.keyPressed[chip8Key] = true
+		}
+
+		if c.screen.JustReleased(key) {
+			c.keyJustReleased[chip8Key] = true
 		}
 	}
 }
@@ -373,57 +379,65 @@ func (c *Chip8) callSubroutine(opcode uint16) {
 
 // checkVxEqlNN skips the next instruction if Vx equals NN
 func (c *Chip8) checkVxEqlNN(opcode uint16) {
-	if c.Vx[uint8((opcode>>8)&0x0F)] == Reg8Bit(opcode&0x00FF) {
+	if c.Vx[(opcode&0x0F00)>>8] == Reg8Bit(opcode&0x00FF) {
 		c.PC += 2 // skip next instruction
 	}
 }
 
 // checkVxNotEqlNN skips the next instruction if Vx does not equal NN
 func (c *Chip8) checkVxNotEqlNN(opcode uint16) {
-	if c.Vx[uint8((opcode>>8)&0x0F)] != Reg8Bit(opcode&0x00FF) {
+	if c.Vx[(opcode&0x0F00)>>8] != Reg8Bit(opcode&0x00FF) {
 		c.PC += 2 // skip next instruction
 	}
 }
 
 // checkVxEqualVy skips the next instruction if Vx equals Vy
 func (c *Chip8) checkVxEqlVy(opcode uint16) {
-	if c.Vx[uint8((opcode>>8)&0x0F)] == c.Vx[uint8(opcode&0xF0)>>4] {
+	if c.Vx[(opcode&0x0F00)>>8] == c.Vx[(opcode&0x00F0)>>4] {
 		c.PC += 2 // skip next instruction
 	}
 }
 
 func (c *Chip8) setVxToNN(opcode uint16) {
-	c.Vx[uint8((opcode>>8)&0x0F)] = Reg8Bit(uint8(opcode))
+	c.Vx[(opcode&0x0F00)>>8] = Reg8Bit(opcode & 0x00FF)
 }
 
 func (c *Chip8) addAssignToVx(opcode uint16) {
-	c.Vx[uint8((opcode>>8)&0x0F)] += Reg8Bit(uint8(opcode))
+	c.Vx[(opcode&0x0F00)>>8] = c.Vx[(opcode&0x0F00)>>8] + Reg8Bit(opcode&0x00FF)
 }
 
 func (c *Chip8) setVxToVy(opcode uint16) {
-	x := uint8((opcode >> 8) & 0x0F)
-	y := uint8((opcode >> 4) & 0x0F)
-	c.Vx[x] = c.Vx[y]
+	c.Vx[(opcode&0x0F00)>>8] = c.Vx[(opcode&0x00F0)>>4]
 }
 
 func (c *Chip8) bitwiseORAssignVxToVy(opcode uint16) {
-	c.Vx[uint8((opcode>>8)&0x0F)] |= c.Vx[uint8((opcode&0xF0)>>4)]
+	c.Vx[(opcode&0x0F00)>>8] = c.Vx[(opcode&0x0F00)>>8] | c.Vx[(opcode&0x00F0)>>4]
 }
 
 func (c *Chip8) bitwiseANDAssignVxToVy(opcode uint16) {
-	c.Vx[uint8((opcode>>8)&0x0F)] &= c.Vx[uint8((opcode&0xF0)>>4)]
+	c.Vx[(opcode&0x0F00)>>8] = c.Vx[(opcode&0x0F00)>>8] & c.Vx[(opcode&0x00F0)>>4]
 }
 
 func (c *Chip8) bitwiseXORAssignVxToVy(opcode uint16) {
-	c.Vx[uint8((opcode>>8)&0x0F)] ^= c.Vx[uint8((opcode&0xF0)>>4)]
+	c.Vx[(opcode&0x0F00)>>8] = c.Vx[(opcode&0x0F00)>>8] ^ c.Vx[(opcode&0x00F0)>>4]
 }
 
 func (c *Chip8) addAssignVyToVx(opcode uint16) {
-	c.Vx[uint8((opcode>>8)&0x0F)] += c.Vx[uint8((opcode&0xF0)>>4)]
+	if c.Vx[(opcode&0x00F0)>>4] > 0xFF-c.Vx[(opcode&0x0F00)>>8] {
+		c.Vx[0xF] = 1
+	} else {
+		c.Vx[0xF] = 0
+	}
+	c.Vx[(opcode&0x0F00)>>8] = c.Vx[(opcode&0x0F00)>>8] + c.Vx[(opcode&0x00F0)>>4]
 }
 
 func (c *Chip8) subAssignVyToVx(opcode uint16) {
-	c.Vx[uint8((opcode>>8)&0x0F)] -= c.Vx[uint8((opcode&0xF0)>>4)]
+	if c.Vx[(opcode&0x00F0)>>4] > c.Vx[(opcode&0x0F00)>>8] {
+		c.Vx[0xF] = 0
+	} else {
+		c.Vx[0xF] = 1
+	}
+	c.Vx[(opcode&0x0F00)>>8] = c.Vx[(opcode&0x0F00)>>8] - c.Vx[(opcode&0x00F0)>>4]
 }
 
 func (c *Chip8) rightShiftVxBy1(opcode uint16) {
@@ -432,7 +446,12 @@ func (c *Chip8) rightShiftVxBy1(opcode uint16) {
 }
 
 func (c *Chip8) setVxToVySubVx(opcode uint16) {
-	c.Vx[uint8((opcode>>8)&0x0F)] = c.Vx[uint8((opcode&0xF0)>>4)] - c.Vx[uint8((opcode>>8)&0x0F)]
+	if c.Vx[(opcode&0x0F00)>>8] > c.Vx[(opcode&0x00F0)>>4] {
+		c.Vx[0xF] = 0
+	} else {
+		c.Vx[0xF] = 1
+	}
+	c.Vx[(opcode&0x0F00)>>8] = c.Vx[(opcode&0x00F0)>>4] - c.Vx[(opcode&0x0F00)>>8]
 }
 
 func (c *Chip8) leftShiftVxBy1(opcode uint16) {
@@ -441,8 +460,8 @@ func (c *Chip8) leftShiftVxBy1(opcode uint16) {
 }
 
 func (c *Chip8) checkVxNotEqlVy(opcode uint16) {
-	if c.Vx[uint8((opcode>>8)&0x0F)] != c.Vx[uint8(opcode&0xF0)>>4] {
-		c.PC += 2 // skip next instruction
+	if c.Vx[(opcode&0x0F00)>>8] != c.Vx[(opcode&0x00F0)>>4] {
+		c.PC = c.PC + 2
 	}
 }
 
@@ -455,10 +474,7 @@ func (c *Chip8) pcJump(opcode uint16) {
 }
 
 func (c *Chip8) setVxToRand(opcode uint16) {
-	// TODO: potential for memleak?
-	var randInt8 [1]uint8
-	rand.Read(randInt8[:])
-	c.Vx[uint8((opcode>>8)&0x0F)] = Reg8Bit(randInt8[0]) & Reg8Bit(opcode)
+	c.Vx[(opcode&0x0F00)>>8] = Reg8Bit(rand.Intn(256)) & Reg8Bit(opcode&0x00FF)
 }
 
 func (c *Chip8) drawSprite(opcode uint16) {
@@ -504,40 +520,50 @@ func (c *Chip8) drawSprite(opcode uint16) {
 }
 
 func (c *Chip8) keyOpEqlCheck(opcode uint16) {
-	if (opcode>>8)&0x0F == uint16(c.keyPressed) {
-		c.PC += 2 // skip next instruction
+	if c.keyPressed[c.Vx[(opcode&0x0F00)>>8]] {
+		c.PC += 2
 	}
 }
 
 func (c *Chip8) keyOpNotEqlCheck(opcode uint16) {
-	if (opcode>>8)&0x0F != uint16(c.keyPressed) {
-		c.PC += 2 // skip next instruction
+	if !c.keyPressed[c.Vx[(opcode&0x0F00)>>8]] {
+		c.PC += 2
 	}
 }
 
 func (c *Chip8) setVxToDelayTimer(opcode uint16) {
-	c.Vx[uint8((opcode>>8)&0x0F)] = c.DT
+	c.Vx[(opcode&0x0F00)>>8] = c.DT
 }
 
-func (c *Chip8) setVxToKeyPress(opcode uint16) {
-	println("DOING")
-	if c.keyPressed == 0xFF {
-		c.PC -= 2 // move back an instruction to go back to this one
-	}
+var emptyBoolSlice [16]bool
 
-	c.Vx[uint8((opcode>>8)&0x0F)] = Reg8Bit(c.keyPressed)
+func (c *Chip8) setVxToKeyPress(opcode uint16) {
+	if c.keyJustReleased == emptyBoolSlice {
+		c.PC -= 2
+		return
+	}
+	for i := 0; i < len(c.keyPressed); i++ {
+		if c.keyJustReleased[i] {
+			c.Vx[(opcode&0x0F00)>>8] = Reg8Bit(i)
+		}
+	}
 }
 
 func (c *Chip8) setDelayTimerToVx(opcode uint16) {
-	c.DT = c.Vx[uint8((opcode>>8)&0x0F)]
+	c.DT = c.Vx[(opcode&0x0F00)>>8]
 }
 
 func (c *Chip8) setSoundTimerToVx(opcode uint16) {
-	c.ST = c.Vx[uint8((opcode>>8)&0x0F)]
+	c.ST = c.Vx[(opcode&0x0F00)>>8]
 }
 
 func (c *Chip8) addAssignVxToI(opcode uint16) {
-	c.I += Reg16Bit(c.Vx[uint8((opcode>>8)&0x0F)])
+	if c.I+Reg16Bit(c.Vx[(opcode&0x0F00)>>8]) > 0xFFF {
+		c.Vx[0xF] = 1
+	} else {
+		c.Vx[0xF] = 0
+	}
+	c.I = c.I + Reg16Bit(c.Vx[(opcode&0x0F00)>>8])
 }
 
 func (c *Chip8) setIToSpriteAddrVx(opcode uint16) {
@@ -578,7 +604,7 @@ func (c *Chip8) setIToSpriteAddrVx(opcode uint16) {
 }
 
 func (c *Chip8) storeBCDToI(opcode uint16) {
-	vxIdx := uint8((opcode >> 8) & 0x0F)
+	vxIdx := uint8((opcode & 0x0F00) >> 8)
 	val := uint8(c.Vx[vxIdx])
 
 	c.MainMemory[c.I] = byte(val / 100)
@@ -588,7 +614,7 @@ func (c *Chip8) storeBCDToI(opcode uint16) {
 
 func (c *Chip8) regDump(opcode uint16) {
 	var i uint8 = 0
-	lastVxReg := uint8((opcode >> 8) & 0x0F)
+	lastVxReg := uint8((opcode & 0x0F00) >> 8)
 
 	regICopy := c.I
 
@@ -601,7 +627,7 @@ func (c *Chip8) regDump(opcode uint16) {
 
 func (c *Chip8) regLoad(opcode uint16) {
 	var i uint8 = 0
-	lastVxReg := uint8((opcode >> 8) & 0x0F)
+	lastVxReg := uint8((opcode & 0x0F00) >> 8)
 
 	regICopy := c.I
 
