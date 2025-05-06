@@ -101,7 +101,6 @@ func run() {
 		if remaining := FrameDuration - elapsed; remaining > 0 {
 			time.Sleep(remaining)
 		}
-
 	}
 }
 
@@ -409,85 +408,106 @@ func (c *Chip8) checkVxEqlVy(opcode uint16) {
 	}
 }
 
+// setVxToNN sets one of the 8-Bit Registers (Vx) to the right-most byte in the opcode
 func (c *Chip8) setVxToNN(opcode uint16) {
 	c.Vx[(opcode&0x0F00)>>8] = uint8(opcode & 0x00FF)
 }
 
+// setVxToNN increments one of the 8-Bit Registers (Vx) by the right-most byte in the opcode
 func (c *Chip8) addAssignToVx(opcode uint16) {
 	c.Vx[(opcode&0x0F00)>>8] = c.Vx[(opcode&0x0F00)>>8] + uint8(opcode&0x00FF)
 }
 
+// setVxToNN sets one of the 8-Bit Registers (Vx) to the value stored in another 8-Bit Register (Vy)
 func (c *Chip8) setVxToVy(opcode uint16) {
 	c.Vx[(opcode&0x0F00)>>8] = c.Vx[(opcode&0x00F0)>>4]
 }
 
+// bitwiseORAssignVxToVy sets 8Bit Register Vx to its value OR'd against 8Bit Register Vy
 func (c *Chip8) bitwiseORAssignVxToVy(opcode uint16) {
 	c.Vx[(opcode&0x0F00)>>8] = c.Vx[(opcode&0x0F00)>>8] | c.Vx[(opcode&0x00F0)>>4]
 }
 
+// bitwiseANDAssignVxToVy sets 8Bit Register Vx to its value AND'd against 8Bit Register Vy
 func (c *Chip8) bitwiseANDAssignVxToVy(opcode uint16) {
 	c.Vx[(opcode&0x0F00)>>8] = c.Vx[(opcode&0x0F00)>>8] & c.Vx[(opcode&0x00F0)>>4]
 }
 
+// bitwiseXORAssignVxToVy sets 8Bit Register Vx to its value XOR'd against 8Bit Register Vy
 func (c *Chip8) bitwiseXORAssignVxToVy(opcode uint16) {
 	c.Vx[(opcode&0x0F00)>>8] = c.Vx[(opcode&0x0F00)>>8] ^ c.Vx[(opcode&0x00F0)>>4]
 }
 
+// addAssignVyToVx increments one of the 8-Bit Registers (Vy) by the value stored in 8Bit Register Vx
 func (c *Chip8) addAssignVyToVx(opcode uint16) {
+	// carry 1 overflow detection logic
 	if c.Vx[(opcode&0x00F0)>>4] > 0xFF-c.Vx[(opcode&0x0F00)>>8] {
-		c.Vx[0xF] = 1
+		c.Vx[0xF] = 1 // no overflow detected
 	} else {
-		c.Vx[0xF] = 0
+		c.Vx[0xF] = 0 // overflow detected
 	}
 	c.Vx[(opcode&0x0F00)>>8] = c.Vx[(opcode&0x0F00)>>8] + c.Vx[(opcode&0x00F0)>>4]
 }
 
+// subAssignVyToVx decrements one of the 8-Bit Registers (Vy) by the value stored in 8Bit Register Vx
 func (c *Chip8) subAssignVyToVx(opcode uint16) {
+	// carry 1 underflow detection logic
 	if c.Vx[(opcode&0x00F0)>>4] > c.Vx[(opcode&0x0F00)>>8] {
-		c.Vx[0xF] = 0
+		c.Vx[0xF] = 0 // no underflow detected
 	} else {
-		c.Vx[0xF] = 1
+		c.Vx[0xF] = 1 // underflow detected
 	}
+
 	c.Vx[(opcode&0x0F00)>>8] = c.Vx[(opcode&0x0F00)>>8] - c.Vx[(opcode&0x00F0)>>4]
 }
 
+// rightShiftVxBy1 bitshifts the value in 8Bit Register Vx to the right by 1
 func (c *Chip8) rightShiftVxBy1(opcode uint16) {
 	c.Vx[0xF] = c.Vx[(opcode&0x0F00)>>8] & 0x1
 	c.Vx[(opcode&0x0F00)>>8] = c.Vx[(opcode&0x0F00)>>8] >> 1
 }
 
+// setVxToVySubVx assigns 8Bit Register Vx to -> (Vy - Vx)
 func (c *Chip8) setVxToVySubVx(opcode uint16) {
+	// carry 1 underflow detection logic
 	if c.Vx[(opcode&0x0F00)>>8] > c.Vx[(opcode&0x00F0)>>4] {
-		c.Vx[0xF] = 0
+		c.Vx[0xF] = 0 // no underflow detected
 	} else {
-		c.Vx[0xF] = 1
+		c.Vx[0xF] = 1 // underflow detected
 	}
+
 	c.Vx[(opcode&0x0F00)>>8] = c.Vx[(opcode&0x00F0)>>4] - c.Vx[(opcode&0x0F00)>>8]
 }
 
+// leftShiftVxBy1 bitshifts the value in 8Bit Register Vx to the left by 1
 func (c *Chip8) leftShiftVxBy1(opcode uint16) {
 	c.Vx[0xF] = c.Vx[(opcode&0x0F00)>>8] >> 7
 	c.Vx[(opcode&0x0F00)>>8] = c.Vx[(opcode&0x0F00)>>8] << 1
 }
 
+// checkVxNotEqlVy performs a conditional check on 8Bit Registers if Vx != Vx
 func (c *Chip8) checkVxNotEqlVy(opcode uint16) {
 	if c.Vx[(opcode&0x0F00)>>8] != c.Vx[(opcode&0x00F0)>>4] {
 		c.PC = c.PC + 2
 	}
 }
 
+// setIReg updates memory address I register points to
 func (c *Chip8) setIReg(opcode uint16) {
 	c.I = uint16(opcode & 0x0FFF)
 }
 
+// pcJump moves program counter to memory address provided in 12 right-most bits in opcode
 func (c *Chip8) pcJump(opcode uint16) {
 	c.PC = uint16(c.Vx[0]) + uint16(opcode&0x0FFF)
 }
 
+// setVxToRand assigns a random unsigned 8-bit integer to 8-bit register Vx
 func (c *Chip8) setVxToRand(opcode uint16) {
 	c.Vx[(opcode&0x0F00)>>8] = uint8(rand.Intn(256)) & uint8(opcode&0x00FF)
 }
 
+// TODO: NEEDS TO BE CLEANED UP AND MADE MORE EFFICIENT
 func (c *Chip8) drawSprite(opcode uint16) {
 	x := c.Vx[(opcode&0x0F00)>>8] % 64
 	y := c.Vx[(opcode&0x00F0)>>4] % 32
