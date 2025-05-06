@@ -21,7 +21,9 @@ const (
 	ScreenHeight  = 32
 	ScalingFactor = 10
 
-	CyclesToExecute = 1
+	CyclesToExecute = 10
+
+	FrameDuration = time.Second / 60
 )
 
 var (
@@ -67,28 +69,20 @@ type Chip8 struct {
 	KeyJustReleased [16]bool
 }
 
+func main() {
+	opengl.Run(run)
+}
+
 func run() {
-	cfg := opengl.WindowConfig{
-		Title:     "Go - Chip8 Interpreter",
-		Bounds:    pixel.R(0, 0, ScreenWidth*ScalingFactor, ScreenHeight*ScalingFactor),
-		VSync:     false,
-		Resizable: false,
-	}
-	win, err := opengl.NewWindow(cfg)
-	if err != nil {
-		panic(err)
-	}
-
 	c := NewChip8()
-	c.Screen = win
-	c.LoadDefaultSprites()
-	c.LoadRomFile("./pong.rom")
-	c.Screen.Clear(colorOff)
-	win.SetMatrix(pixel.IM.Scaled(pixel.ZV, 1))
 
-	frameDuration := time.Second / 1000
-	for !win.Closed() && !c.IsStopped {
+	c.LoadDefaultSprites()
+
+	c.LoadRomFile("./flightrunner.ch8")
+
+	for !c.Screen.Closed() && !c.IsStopped {
 		start := time.Now()
+
 		c.ExecuteCPU(CyclesToExecute)
 
 		if c.DT > 0 {
@@ -99,23 +93,40 @@ func run() {
 			c.ST--
 		}
 
-		win.Update()
+		c.Screen.Update()
 
 		c.handleInput()
+
 		elapsed := time.Since(start)
-		if remaining := frameDuration - elapsed; remaining > 0 {
+		if remaining := FrameDuration - elapsed; remaining > 0 {
 			time.Sleep(remaining)
 		}
 
 	}
 }
 
-func main() {
-	opengl.Run(run)
-}
-
 func NewChip8() *Chip8 {
-	return &Chip8{}
+	// create gui screen to render sprites to
+	cfg := opengl.WindowConfig{
+		Title:     "Go - Chip8 Interpreter",
+		Bounds:    pixel.R(0, 0, ScreenWidth*ScalingFactor, ScreenHeight*ScalingFactor),
+		VSync:     false,
+		Resizable: false,
+	}
+
+	win, err := opengl.NewWindow(cfg)
+	if err != nil {
+		panic(err)
+	}
+
+	// ensure clean screen state
+	win.SetMatrix(pixel.IM.Scaled(pixel.ZV, 1))
+	win.Clear(colorOff)
+
+	// instantiate and tie screen to Chip8 instance
+	return &Chip8{
+		Screen: win,
+	}
 }
 
 func (c *Chip8) LoadDefaultSprites() {
@@ -271,7 +282,7 @@ func (c *Chip8) decode(opcode uint16) Opcode {
 	default:
 	}
 
-	return opcode00E0 // TODO REMOVE
+	return opcode00E0
 }
 
 func (c *Chip8) execute(opcode Opcode, opcodeRaw uint16) {
