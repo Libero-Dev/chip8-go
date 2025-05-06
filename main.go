@@ -17,7 +17,16 @@ const (
 	RamGameStartETI uint16 = 0x600
 	RamEnd          uint16 = 0xFFF
 
+	ScreenWidth   = 64
+	ScreenHeight  = 32
+	ScalingFactor = 10
+
 	CyclesToExecute = 1
+)
+
+var (
+	colorOff = color.RGBA{0xd1, 0xd4, 0xcd, 255}
+	colorOn  = color.RGBA{0x74, 0x8c, 0xab, 255}
 )
 
 type Chip8 struct {
@@ -42,31 +51,26 @@ type Chip8 struct {
 	// Stack Pointer
 	SP uint8
 
+	// Run Time Stack Space
 	Stack [16]uint16
 
-	isStopped bool
+	// GUI Screen Presented To User
+	Screen *opengl.Window
 
-	keyPressed [16]bool
+	// Logical Representation Of Screen On/Off State
+	ScreenState [32][64]uint8
 
-	keyJustReleased [16]bool
+	IsStopped bool
 
-	screen *opengl.Window
+	KeyPressed [16]bool
 
-	screenState [32][64]uint8
+	KeyJustReleased [16]bool
 }
-
-const (
-	SCREEN_WIDTH   = 64
-	SCREEN_HEIGHT  = 32
-	SCALING_FACTOR = 10
-)
-
-var colorOff = color.RGBA{0xd1, 0xd4, 0xcd, 255}
 
 func run() {
 	cfg := opengl.WindowConfig{
-		Title:     "Pixel Rocks!",
-		Bounds:    pixel.R(0, 0, SCREEN_WIDTH*SCALING_FACTOR, SCREEN_HEIGHT*SCALING_FACTOR),
+		Title:     "Go - Chip8 Interpreter",
+		Bounds:    pixel.R(0, 0, ScreenWidth*ScalingFactor, ScreenHeight*ScalingFactor),
 		VSync:     false,
 		Resizable: false,
 	}
@@ -76,14 +80,14 @@ func run() {
 	}
 
 	c := NewChip8()
-	c.screen = win
+	c.Screen = win
 	c.LoadDefaultSprites()
 	c.LoadRomFile("./pong.rom")
-	c.screen.Clear(colorOff)
+	c.Screen.Clear(colorOff)
 	win.SetMatrix(pixel.IM.Scaled(pixel.ZV, 1))
 
 	frameDuration := time.Second / 1000
-	for !win.Closed() && !c.isStopped {
+	for !win.Closed() && !c.IsStopped {
 		start := time.Now()
 		c.ExecuteCPU(CyclesToExecute)
 
@@ -127,8 +131,8 @@ func (c *Chip8) ExecuteCPU(cyclesToExecute int) {
 }
 
 func (c *Chip8) handleInput() {
-	c.keyPressed = [16]bool{}
-	c.keyJustReleased = [16]bool{}
+	c.KeyPressed = [16]bool{}
+	c.KeyJustReleased = [16]bool{}
 
 	keyMap := map[pixel.Button]byte{
 		pixel.Key1: 0x1, pixel.Key2: 0x2, pixel.Key3: 0x3, pixel.Key4: 0xC,
@@ -142,17 +146,18 @@ func (c *Chip8) handleInput() {
 		pixel.KeyDown:  0x8,
 	}
 
-	if c.screen.Pressed(pixel.KeyEscape) {
-		os.Exit(0)
+	if c.Screen.Pressed(pixel.KeyEscape) {
+		c.IsStopped = true
+		return
 	}
 
 	for key, chip8Key := range keyMap {
-		if c.screen.Pressed(key) {
-			c.keyPressed[chip8Key] = true
+		if c.Screen.Pressed(key) {
+			c.KeyPressed[chip8Key] = true
 		}
 
-		if c.screen.JustReleased(key) {
-			c.keyJustReleased[chip8Key] = true
+		if c.Screen.JustReleased(key) {
+			c.KeyJustReleased[chip8Key] = true
 		}
 	}
 }
@@ -343,9 +348,9 @@ func (c *Chip8) execute(opcode Opcode, opcodeRaw uint16) {
 }
 
 func (c *Chip8) clearScreen() {
-	c.screen.Clear(colorOff)
-	for i := range c.screenState {
-		c.screenState[i] = [64]uint8{}
+	c.Screen.Clear(colorOff)
+	for i := range c.ScreenState {
+		c.ScreenState[i] = [64]uint8{}
 	}
 }
 
@@ -479,33 +484,32 @@ func (c *Chip8) drawSprite(opcode uint16) {
 	c.Vx[0xF] = 0
 	var j uint16 = 0
 	var i uint16 = 0
-	colorOn := color.RGBA{0x74, 0x8c, 0xab, 255}
-	img := image.NewRGBA(image.Rect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT))
+	img := image.NewRGBA(image.Rect(0, 0, ScreenWidth, ScreenHeight))
 
 	for j = 0; j < h; j++ {
 		pixel := c.MainMemory[uint16(c.I)+j]
 
-		if uint8(y)+uint8(j) >= SCREEN_HEIGHT {
+		if uint8(y)+uint8(j) >= ScreenHeight {
 			continue
 		}
 
 		for i = 0; i < 8; i++ {
-			if uint8(x)+uint8(i) >= SCREEN_WIDTH {
+			if uint8(x)+uint8(i) >= ScreenWidth {
 				continue
 			}
 
 			if (pixel & (0x80 >> i)) != 0 {
-				if c.screenState[(uint8(y) + uint8(j))][uint8(x)+uint8(i)] == 1 {
+				if c.ScreenState[(uint8(y) + uint8(j))][uint8(x)+uint8(i)] == 1 {
 					c.Vx[0xF] = 1
 				}
-				c.screenState[(uint8(y) + uint8(j))][uint8(x)+uint8(i)] ^= 1
+				c.ScreenState[(uint8(y) + uint8(j))][uint8(x)+uint8(i)] ^= 1
 			}
 		}
 	}
 
 	for y := 0; y < 32; y++ {
 		for x := 0; x < 64; x++ {
-			if c.screenState[y][x] == 1 {
+			if c.ScreenState[y][x] == 1 {
 				img.Set(x, y, colorOn)
 			} else {
 				img.Set(x, y, colorOff)
@@ -517,20 +521,20 @@ func (c *Chip8) drawSprite(opcode uint16) {
 	sprite := pixel.NewSprite(pic, pic.Bounds())
 
 	mat := pixel.IM.
-		Scaled(pixel.ZV, SCALING_FACTOR).
-		Moved(c.screen.Bounds().Center())
+		Scaled(pixel.ZV, ScalingFactor).
+		Moved(c.Screen.Bounds().Center())
 
-	sprite.Draw(c.screen, mat)
+	sprite.Draw(c.Screen, mat)
 }
 
 func (c *Chip8) keyOpEqlCheck(opcode uint16) {
-	if c.keyPressed[c.Vx[(opcode&0x0F00)>>8]] {
+	if c.KeyPressed[c.Vx[(opcode&0x0F00)>>8]] {
 		c.PC += 2
 	}
 }
 
 func (c *Chip8) keyOpNotEqlCheck(opcode uint16) {
-	if !c.keyPressed[c.Vx[(opcode&0x0F00)>>8]] {
+	if !c.KeyPressed[c.Vx[(opcode&0x0F00)>>8]] {
 		c.PC += 2
 	}
 }
@@ -542,12 +546,12 @@ func (c *Chip8) setVxToDelayTimer(opcode uint16) {
 var emptyBoolSlice [16]bool
 
 func (c *Chip8) setVxToKeyPress(opcode uint16) {
-	if c.keyJustReleased == emptyBoolSlice {
+	if c.KeyJustReleased == emptyBoolSlice {
 		c.PC -= 2
 		return
 	}
-	for i := 0; i < len(c.keyPressed); i++ {
-		if c.keyJustReleased[i] {
+	for i := 0; i < len(c.KeyPressed); i++ {
+		if c.KeyJustReleased[i] {
 			c.Vx[(opcode&0x0F00)>>8] = uint8(i)
 		}
 	}
