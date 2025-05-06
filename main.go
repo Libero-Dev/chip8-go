@@ -81,26 +81,17 @@ func run() {
 	c.LoadRomFile("./flightrunner.ch8")
 
 	for !c.Screen.Closed() && !c.IsStopped {
-		start := time.Now()
+		cycleStartTime := time.Now()
 
 		c.ExecuteCPU(CyclesToExecute)
 
-		if c.DT > 0 {
-			c.DT--
-		}
+		c.DecrementTimers()
 
-		if c.ST > 0 {
-			c.ST--
-		}
-
-		c.Screen.Update()
+		c.DrawScreen()
 
 		c.handleInput()
 
-		elapsed := time.Since(start)
-		if remaining := FrameDuration - elapsed; remaining > 0 {
-			time.Sleep(remaining)
-		}
+		c.Wait(cycleStartTime)
 	}
 }
 
@@ -137,6 +128,27 @@ func (c *Chip8) ExecuteCPU(cyclesToExecute int) {
 		opcode := c.fetch()
 		instruction := c.decode(opcode)
 		c.execute(instruction, opcode)
+	}
+}
+
+func (c *Chip8) DecrementTimers() {
+	if c.DT > 0 {
+		c.DT--
+	}
+
+	if c.ST > 0 {
+		c.ST--
+	}
+}
+
+func (c *Chip8) DrawScreen() {
+	c.Screen.Update()
+}
+
+func (c *Chip8) Wait(cycleStartTime time.Time) {
+	elapsed := time.Since(cycleStartTime)
+	if remaining := FrameDuration - elapsed; remaining > 0 {
+		time.Sleep(remaining)
 	}
 }
 
