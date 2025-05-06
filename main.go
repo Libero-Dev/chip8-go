@@ -20,34 +20,29 @@ const (
 	CyclesToExecute = 1
 )
 
-type (
-	Reg8Bit  uint8
-	Reg16Bit uint16
-)
-
 type Chip8 struct {
 	// General Accessible Memory
 	MainMemory [0xFFF]byte
 
 	// General Purpose 8-Bit Registers (V0-VF)
-	Vx [16]Reg8Bit
+	Vx [16]uint8
 
 	// Memory Address Store Register
-	I Reg16Bit
+	I uint16
 
 	// Delay Timer Register
-	DT Reg8Bit
+	DT uint8
 
 	// Sound Timer Register
-	ST Reg8Bit
+	ST uint8
 
 	// Program Counter
-	PC Reg16Bit
+	PC uint16
 
 	// Stack Pointer
-	SP Reg8Bit
+	SP uint8
 
-	Stack [16]Reg16Bit
+	Stack [16]uint16
 
 	isStopped bool
 
@@ -175,7 +170,7 @@ func (c *Chip8) LoadRomFile(romFile string) {
 }
 
 func (c *Chip8) PositionProgramCounter(pos uint16) {
-	c.PC = Reg16Bit(pos)
+	c.PC = uint16(pos)
 }
 
 func (c *Chip8) fetch() uint16 {
@@ -363,7 +358,7 @@ func (c *Chip8) exitSubroutine() {
 }
 
 func (c *Chip8) JumpToAddr(opcode uint16) {
-	c.PC = Reg16Bit(opcode & 0x0FFF)
+	c.PC = uint16(opcode & 0x0FFF)
 }
 
 // callSubroutine increments the stack pointer, sets current PC to top of stack, sets PC to NNN
@@ -374,19 +369,19 @@ func (c *Chip8) callSubroutine(opcode uint16) {
 
 	c.SP++
 	c.Stack[c.SP-1] = c.PC // TODO: MIGHT HAVE TO DO c.SP-1 for index access
-	c.PC = Reg16Bit(opcode & 0x0FFF)
+	c.PC = uint16(opcode & 0x0FFF)
 }
 
 // checkVxEqlNN skips the next instruction if Vx equals NN
 func (c *Chip8) checkVxEqlNN(opcode uint16) {
-	if c.Vx[(opcode&0x0F00)>>8] == Reg8Bit(opcode&0x00FF) {
+	if c.Vx[(opcode&0x0F00)>>8] == uint8(opcode&0x00FF) {
 		c.PC += 2 // skip next instruction
 	}
 }
 
 // checkVxNotEqlNN skips the next instruction if Vx does not equal NN
 func (c *Chip8) checkVxNotEqlNN(opcode uint16) {
-	if c.Vx[(opcode&0x0F00)>>8] != Reg8Bit(opcode&0x00FF) {
+	if c.Vx[(opcode&0x0F00)>>8] != uint8(opcode&0x00FF) {
 		c.PC += 2 // skip next instruction
 	}
 }
@@ -399,11 +394,11 @@ func (c *Chip8) checkVxEqlVy(opcode uint16) {
 }
 
 func (c *Chip8) setVxToNN(opcode uint16) {
-	c.Vx[(opcode&0x0F00)>>8] = Reg8Bit(opcode & 0x00FF)
+	c.Vx[(opcode&0x0F00)>>8] = uint8(opcode & 0x00FF)
 }
 
 func (c *Chip8) addAssignToVx(opcode uint16) {
-	c.Vx[(opcode&0x0F00)>>8] = c.Vx[(opcode&0x0F00)>>8] + Reg8Bit(opcode&0x00FF)
+	c.Vx[(opcode&0x0F00)>>8] = c.Vx[(opcode&0x0F00)>>8] + uint8(opcode&0x00FF)
 }
 
 func (c *Chip8) setVxToVy(opcode uint16) {
@@ -466,15 +461,15 @@ func (c *Chip8) checkVxNotEqlVy(opcode uint16) {
 }
 
 func (c *Chip8) setIReg(opcode uint16) {
-	c.I = Reg16Bit(opcode & 0x0FFF)
+	c.I = uint16(opcode & 0x0FFF)
 }
 
 func (c *Chip8) pcJump(opcode uint16) {
-	c.PC = Reg16Bit(c.Vx[0]) + Reg16Bit(opcode&0x0FFF)
+	c.PC = uint16(c.Vx[0]) + uint16(opcode&0x0FFF)
 }
 
 func (c *Chip8) setVxToRand(opcode uint16) {
-	c.Vx[(opcode&0x0F00)>>8] = Reg8Bit(rand.Intn(256)) & Reg8Bit(opcode&0x00FF)
+	c.Vx[(opcode&0x0F00)>>8] = uint8(rand.Intn(256)) & uint8(opcode&0x00FF)
 }
 
 func (c *Chip8) drawSprite(opcode uint16) {
@@ -553,7 +548,7 @@ func (c *Chip8) setVxToKeyPress(opcode uint16) {
 	}
 	for i := 0; i < len(c.keyPressed); i++ {
 		if c.keyJustReleased[i] {
-			c.Vx[(opcode&0x0F00)>>8] = Reg8Bit(i)
+			c.Vx[(opcode&0x0F00)>>8] = uint8(i)
 		}
 	}
 }
@@ -567,12 +562,12 @@ func (c *Chip8) setSoundTimerToVx(opcode uint16) {
 }
 
 func (c *Chip8) addAssignVxToI(opcode uint16) {
-	if c.I+Reg16Bit(c.Vx[(opcode&0x0F00)>>8]) > 0xFFF {
+	if c.I+uint16(c.Vx[(opcode&0x0F00)>>8]) > 0xFFF {
 		c.Vx[0xF] = 1
 	} else {
 		c.Vx[0xF] = 0
 	}
-	c.I = c.I + Reg16Bit(c.Vx[(opcode&0x0F00)>>8])
+	c.I = c.I + uint16(c.Vx[(opcode&0x0F00)>>8])
 }
 
 func (c *Chip8) setIToSpriteAddrVx(opcode uint16) {
@@ -641,7 +636,7 @@ func (c *Chip8) regLoad(opcode uint16) {
 	regICopy := c.I
 
 	for i <= lastVxReg {
-		c.Vx[i] = Reg8Bit(c.MainMemory[regICopy])
+		c.Vx[i] = uint8(c.MainMemory[regICopy])
 		regICopy++
 		i++
 	}
